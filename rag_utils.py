@@ -1,39 +1,72 @@
-from dotenv import load_dotenv
-load_dotenv()
+# -----------------------------
+# FILE: rag_utils.py
+# -----------------------------
+def process_query(text, query):
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain.embeddings import OpenAIEmbeddings
+    from langchain.vectorstores import FAISS
+    from langchain.chat_models import ChatOpenAI
+    from langchain.chains import RetrievalQA
+    from langchain.prompts import PromptTemplate
+    import os
 
-from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain.chat_models import ChatOpenAI
-from langchain.chains import RetrievalQA
-import os
+    # Hardcoded API key (Note: this is not a best practice but required as specified)
+    api_key = "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"
+    os.environ['OPENAI_API_KEY'] = api_key
 
-def process_query(document_text, user_question):
-    # 1. Chunk the text
-    text_splitter = CharacterTextSplitter(
-        separator="\n",
-        chunk_size=1000,
-        chunk_overlap=100
-    )
-    chunks = text_splitter.split_text(document_text)
-
-    # 2. Embed chunks
-    embeddings = OpenAIEmbeddings()
-    vectorstore = FAISS.from_texts(chunks, embeddings)
-
-    # 3. Create retriever + QA chain
-    retriever = vectorstore.as_retriever()
-    llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.2)
-
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=False
-    )
-
-    # 4. Ask the question
-    result = qa_chain.run(user_question)
-    return result
-
-
+    try:
+        # Improved text splitter for better chunking
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            length_function=len,
+            separators=["\n\n", "\n", " ", ""]
+        )
+        chunks = text_splitter.split_text(text)
+        
+        # Create embeddings and vector store
+        embeddings = OpenAIEmbeddings()
+        vector_store = FAISS.from_texts(chunks, embeddings)
+        
+        # Create a retrieval system that only gets the most relevant chunks
+        retriever = vector_store.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 5}  # Only retrieve the 5 most relevant chunks
+        )
+        
+        # Create a custom prompt template that includes the query context
+        prompt_template = """You are an Annual Report Assistant analyzing financial documents.
+        Use the following context to answer the question.
+        
+        Context:
+        {context}
+        
+        Question: {question}
+        
+        Answer the question based only on the provided context. If the context doesn't contain 
+        the information needed to answer the question, just say "I don't have enough information 
+        in this report to answer that question." Be specific and include relevant financial data 
+        when available.
+        """
+        
+        PROMPT = PromptTemplate(
+            template=prompt_template, 
+            input_variables=["context", "question"]
+        )
+        
+        # Setup the QA chain with the custom prompt
+        llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo")
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=retriever,
+            return_source_documents=False,
+            chain_type_kwargs={"prompt": PROMPT}
+        )
+        
+        # Get the answer
+        result = qa_chain({"query": query})
+        return result["result"]
+        
+    except Exception as e:
+        return f"I encountered an error processing your question: {str(e)}. Please try uploading a smaller document or asking a more specific question about a particular section of the report."
