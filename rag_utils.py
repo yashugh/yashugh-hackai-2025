@@ -11,7 +11,7 @@ def process_query(text, query):
     import os
 
     # Hardcoded API key (Note: this is not a best practice but required as specified)
-    os.environ['OPENAI_API_KEY'] = api_key
+    #os.environ['OPENAI_API_KEY'] = api_key
 
     try:
         # Improved text splitter for better chunking
