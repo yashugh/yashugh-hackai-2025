@@ -1,15 +1,17 @@
 # -----------------------------
-# FILE: app.py (frontend + interaction)
+# FILE: app.py
 # -----------------------------
 import streamlit as st
 import os
 from pathlib import Path
-from pdf_utils import extract_text_from_pdf
+from dotenv import load_dotenv
+from pdf_utils import extract_text_and_tables_from_pdf
 from rag_utils import process_query
+
+load_dotenv()
 
 st.set_page_config(page_title="📊 Annual Report Assistant", layout="centered")
 
-# Session state initialization
 if 'theme' not in st.session_state:
     st.session_state.theme = 'light'
 if 'authenticated' not in st.session_state:
@@ -17,7 +19,6 @@ if 'authenticated' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state.username = ""
 
-# Theme toggle styling
 def apply_theme():
     if st.session_state.theme == 'dark':
         st.markdown("""
@@ -98,51 +99,20 @@ else:
 
     if uploaded:
         st.success("✅ PDF Uploaded!")
-        pdf_text = extract_text_from_pdf(uploaded)
+        pdf_text, pdf_tables = extract_text_and_tables_from_pdf(uploaded)
+
+        if pdf_tables:
+            with st.expander("📋 Detected Tables"):
+                for idx, table in enumerate(pdf_tables):
+                    st.code(table, language="text")
 
         question = st.text_input("Ask a question about the report:")
         if question:
             with st.spinner("Thinking..."):
-                response = process_query(pdf_text, question)
+                response = process_query(pdf_text + "\n" + "\n".join(pdf_tables), question)
                 st.write("You asked:", question)
                 st.success(response)
 
 
-# -----------------------------
-# FILE: pdf_utils.py (PDF extraction)
-# -----------------------------
-def extract_text_from_pdf(uploaded_file):
-    from PyPDF2 import PdfReader
-    reader = PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
-    return text
 
-
-# -----------------------------
-# FILE: rag_utils.py (backend RAG)
-# -----------------------------
-def process_query(text, query):
-    from langchain.text_splitter import CharacterTextSplitter
-    from langchain.embeddings import OpenAIEmbeddings
-    from langchain.vectorstores import FAISS
-    from langchain.chat_models import ChatOpenAI
-    from langchain.chains.question_answering import load_qa_chain
-    import os
-
-    os.environ['OPENAI_API_KEY'] = os.getenv("OPENAI_API_KEY")  # Make sure it's set in .env
-
-    splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    chunks = splitter.split_text(text)
-
-    embeddings = OpenAIEmbeddings()
-    vector_store = FAISS.from_texts(chunks, embeddings)
-
-    relevant_docs = vector_store.similarity_search(query)
-
-    llm = ChatOpenAI(temperature=0)
-    chain = load_qa_chain(llm, chain_type="stuff")
-    response = chain.run(input_documents=relevant_docs, question=query)
-    return response
 
