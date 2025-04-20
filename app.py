@@ -185,7 +185,7 @@ st.markdown("""
 html, body, [class*="css"] {
     font-family: 'Poppins', sans-serif;
 }
-
+/*done*/
 /* Main container adjustments */
 .main .block-container {
     max-width: 95% !important;
