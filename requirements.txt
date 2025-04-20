@@ -4,3 +4,4 @@ langchain
 pymupdf
 faiss-cpu
 python-dotenv
+sentence-transformers
