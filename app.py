@@ -1,212 +1,295 @@
+
 import streamlit as st
-import hashlib
-import pickle
-import os
-from pathlib import Path
+import base64
+from PIL import Image
 
-# Configure page
-st.set_page_config(page_title="📊 Annual Report Assistant", layout="centered")
+st.set_page_config(page_title="📊 Annual Report Assistant", layout="wide")
 
-# Initialize session state variables
-if 'theme' not in st.session_state:
-    st.session_state.theme = 'light'
+# --------- SESSION STATE INIT ---------
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 if 'username' not in st.session_state:
     st.session_state.username = ""
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'pdf_uploaded' not in st.session_state:
+    st.session_state.pdf_uploaded = False
 
 
-# Apply theme based on current selection
-def apply_theme():
-    if st.session_state.theme == 'dark':
-        # Dark theme with improved text visibility
-        st.markdown("""
-        <style>
-        .main {
-            background-color: #121212;
-            color: #FFFFFF !important;
-        }
-        .stApp {
-            background-color: #121212;
-        }
-        .stTextInput > div > div > input {
-            background-color: #2E2E2E;
-            color: #FFFFFF;
-        }
-        .stButton > button {
-            background-color: #0E86D4;
-            color: white;
-        }
-        /* Ensure text elements have proper contrast */
-        p, h1, h2, h3, span, label, .stMarkdown, .stText {
-            color: #FFFFFF !important;
-        }
-
-        /* File uploader specific styling */
-        .stFileUploader label {
-            color: #FFFFFF !important;
-        }
-        .stFileUploader div[data-testid="stFileUploaderDropzone"] {
-            background-color: #2E2E2E;
-            border-color: #4E4E4E;
-        }
-        .stFileUploader div[data-testid="stFileUploaderDropzone"] p {
-            color: #FFFFFF !important;
-        }
-        .stFileUploader div[data-testid="stFileUploaderStatusWidget"] {
-            background-color: #2E2E2E;
-        }
-        .stFileUploader div[data-testid="stFileUploaderStatusWidget"] p {
-            color: #FFFFFF !important;
-        }
-
-        /* Login form styling */
-        .stForm {
-            background-color: #1E1E1E;
-            padding: 20px;
-            border-radius: 10px;
-        }
-
-        /* Success message text fix but preserve background */
-        .element-container .stAlert.success {
-            background-color: rgba(0, 168, 107, 0.2);
-        }
-        .element-container .stAlert.success div {
-            color: #FFFFFF !important;
-        }
-
-        .stMarkdown a {
-            color: #8AB4F8 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        # Light theme (default)
-        st.markdown("""
-        <style>
-        .main {
-            background-color: #FFFFFF;
-            color: #31333F;
-        }
-        .stApp {
-            background-color: #FFFFFF;
-        }
-        p, h1, h2, h3, span, label {
-            color: #31333F !important;
-        }
-        /* Login form styling */
-        .stForm {
-            background-color: #F0F2F6;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+# --------- BACKGROUND IMAGE FUNCTION ---------
+def add_bg_from_local(image_file):
+    try:
+        with open(image_file, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        st.markdown(
+            f"""
+            <style>
+            .stApp {{
+                background-image: url(data:image/png;base64,{encoded_string});
+                background-size: cover;
+                background-repeat: no-repeat;
+                background-attachment: fixed;
+            }}
+            .stApp::before {{
+                content: "";
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(255, 255, 255, 0.6);
+                z-index: -1;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+    except FileNotFoundError:
+        st.warning("Background image not found!")
 
 
-# Function to toggle theme
-def toggle_theme():
-    if st.session_state.theme == 'light':
-        st.session_state.theme = 'dark'
-    else:
-        st.session_state.theme = 'light'
-
-
-# Authentication function (hardcoded for testing)
+# --------- AUTH FUNCTIONS ---------
 def authenticate(username, password):
-    # Hardcoded credentials for testing
-    if username == "admin" and password == "admin":
-        return True
-    return False
+    return username == "admin" and password == "admin"
 
 
-# Function to handle form submission - store username and password in session state
 def handle_form_submit():
     st.session_state.form_username = st.session_state.username_input
     st.session_state.form_password = st.session_state.password_input
     st.session_state.form_submitted = True
 
 
-# Function to logout
 def logout():
     st.session_state.authenticated = False
     st.session_state.username = ""
-    if 'form_submitted' in st.session_state:
-        st.session_state.form_submitted = False
-    if 'form_username' in st.session_state:
-        del st.session_state.form_username
-    if 'form_password' in st.session_state:
-        del st.session_state.form_password
+    st.session_state.chat_history = []
+    st.session_state.pdf_uploaded = False
+    st.session_state.pop('form_submitted', None)
+    st.session_state.pop('form_username', None)
+    st.session_state.pop('form_password', None)
 
 
-# Apply the theme CSS
-apply_theme()
+def handle_chat_submit():
+    if st.session_state.user_question.strip() and st.session_state.pdf_uploaded:
+        st.session_state.chat_history.append(("user", st.session_state.user_question))
+        st.session_state.chat_history.append(("assistant", "Pretend I'm answering right now (AI coming next!)"))
+        st.session_state.user_question = ""
 
-# Main application
+
+# --------- LOAD ASSETS ---------
+add_bg_from_local("background1.jpg")
+
+# --------- STYLES ---------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Poppins', sans-serif;
+}
+
+/* Main container adjustments */
+.main .block-container {
+    max-width: 95% !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+}
+
+/* Logo container styling */
+.logo-container {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+}
+
+/* Headings */
+h1 {
+    font-size: 72px !important;  /* Increased from 60px */
+    font-weight: 800;
+    text-align: center;
+}
+
+h2 {
+    font-size: 50px !important;  /* Increased from 40px */
+    font-weight: 700;
+    text-align: center;
+}
+
+h3 {
+    font-size: 35px !important;  /* Increased from 28px */
+    margin-top: 15px !important;
+}
+
+/* Login box */
+div[data-testid="stForm"] {
+    width: 85%;  /* Increased from 80% */
+    max-width: 1100px;  /* Increased from 1000px */
+    height: 650px;  /* Increased from 550px */
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 90px;
+    background-color: rgba(255, 255, 255, 0.5);
+    padding: 60px 50px;  /* Increased padding */
+    border-radius: 25px;  /* Increased from 20px */
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);  /* Enhanced shadow */
+}
+
+/* Input labels */
+div[data-testid="stTextInput"] label {
+    font-size: 28px !important;  /* Increased from 22px */
+    font-weight: 600 !important;
+    color: black !important;
+}
+
+/* Input fields */
+input[type="text"], input[type="password"] {
+    font-size: 24px !important;  /* Increased from 18px */
+    padding: 18px 14px !important;  /* Increased padding */
+    border-radius: 12px !important;  /* Increased radius */
+    border: 2px solid #ccc !important;  /* Increased border */
+    background: rgba(255,255,255,0.7) !important;
+    color: black !important;
+    height: 60px !important;  /* Added height */
+}
+
+/* Upload box */
+section[data-testid="stFileUploader"] {
+    width: 95% !important;
+    margin: auto;
+    padding: 25px;  /* Increased from 20px */
+    font-size: 26px;  /* Increased from 22px */
+}
+
+/* Chat bubbles */
+.user-message {
+    background-color: #DCF8C6;
+    padding: 15px;  /* Increased from 10px */
+    border-radius: 15px;  /* Increased from 10px */
+    margin: 8px 0;  /* Increased from 5px */
+    font-size: 22px;  /* Added font size */
+}
+
+.assistant-message {
+    background-color: #FFF;
+    padding: 15px;  /* Increased from 10px */
+    border-radius: 15px;  /* Increased from 10px */
+    margin: 8px 0;  /* Increased from 5px */
+    font-size: 22px;  /* Added font size */
+}
+
+/* Chat input */
+div[data-testid="stTextInput"] > div > div > input {
+    font-size: 22px !important;  /* Increased font size */
+}
+
+/* Logout Button */
+div.stButton > button {
+    font-size: 26px !important;  /* Increased from 22px */
+    padding: 16px 35px !important;  /* Increased padding */
+    border-radius: 12px !important;  /* Increased radius */
+    background-color: #ff4b4b !important;
+    color: white !important;
+    font-weight: 600 !important;
+}
+
+div.stButton > button:hover {
+    background-color: #cc0000 !important;
+}
+
+/* Success/Error messages */
+div[data-testid="stAlert"] p {
+    font-size: 24px !important;  /* Increased font size */
+}
+
+/* Caption text */
+.css-1vbkxwb {
+    font-size: 18px !important;  /* Increased caption font size */
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --------- MAIN APP STRUCTURE ---------
+# Create a container for the logo that will appear at the top of every page
+logo_container = st.container()
+with logo_container:
+    # Create two columns - smaller ratio for the logo to make it bigger visually
+    logo_col, content_col = st.columns([1, 7])
+    with logo_col:
+        try:
+            # Try to load the logo with both extensions
+            try:
+                logo = Image.open("mindtree.png")
+                st.image(logo, width=220)  # Increased from 180
+            except FileNotFoundError:
+                try:
+                    logo = Image.open("mindtree.jpg")
+                    st.image(logo, width=220)  # Increased from 180
+                except FileNotFoundError:
+                    st.error("Logo file not found. Please ensure 'mindtree.png' or 'mindtree.jpg' exists.")
+        except Exception as e:
+            st.error(f"Error loading logo: {e}")
+
+# Continue with the rest of the app
 if not st.session_state.authenticated:
-    # LOGIN PAGE
+    st.markdown("<h1>📊 Annual Report Assistant</h1>", unsafe_allow_html=True)
+    st.markdown("<h2>🔐 Login:</h2>", unsafe_allow_html=True)
 
-    # Add theme toggle button at the top right
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        current_theme = "🌙 Dark" if st.session_state.theme == 'light' else "☀️ Light"
-        st.button(current_theme, on_click=toggle_theme, key="theme_toggle")
-
-    # Login interface
-    st.title("📊 Annual Report Assistant")
-    st.subheader("Login")
-
-    # Create a centered login form with some padding
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # Wider login form with fewer empty columns on sides
+    col1, col2, col3 = st.columns([1, 10, 1])
     with col2:
         with st.form("login_form"):
-            st.text_input("Username", key="username_input")
-            st.text_input("Password", type="password", key="password_input")
-
-            # Hint for testing
+            st.markdown("<label style='font-size:42px; font-weight:700;'>Username</label>",
+                        unsafe_allow_html=True)  # Increased from 36px
+            st.text_input("", key="username_input")
+            st.markdown("<label style='font-size:42px; font-weight:700;'>Password</label>",
+                        unsafe_allow_html=True)  # Increased from 36px
+            st.text_input("", type="password", key="password_input")
             st.caption("Use 'admin' for both username and password")
+            st.form_submit_button("Sign In", on_click=handle_form_submit)
 
-            submitted = st.form_submit_button("Sign In", on_click=handle_form_submit)
-
-        # Process login outside the form
-        if 'form_submitted' in st.session_state and st.session_state.form_submitted:
-            username = st.session_state.form_username
-            password = st.session_state.form_password
-
-            if authenticate(username, password):
-                st.session_state.authenticated = True
-                st.session_state.username = username
-                st.session_state.form_submitted = False
-                st.success("Login successful!")
-                st.rerun()
-            else:
-                st.error("Invalid username or password")
-                st.session_state.form_submitted = False
-
+    if 'form_submitted' in st.session_state and st.session_state.form_submitted:
+        username = st.session_state.form_username
+        password = st.session_state.form_password
+        if authenticate(username, password):
+            st.session_state.authenticated = True
+            st.session_state.username = username
+            st.success("Login successful!")
+            st.rerun()
+        else:
+            st.error("Invalid username or password")
+            st.session_state.form_submitted = False
 else:
-    # HOME PAGE
+    # Adjusted column ratios to make content wider
+    col1, col2, col3 = st.columns([1, 5, 1])
+    with col3:
+        st.button("Logout", on_click=logout)
 
-    # Add theme toggle and logout buttons at the top
-    header = st.container()
-    with header:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col1:
-            current_theme = "🌙 Dark" if st.session_state.theme == 'light' else "☀️ Light"
-            st.button(current_theme, on_click=toggle_theme, key="theme_toggle")
-        with col3:
-            st.button("Logout", on_click=logout)
+    st.markdown(f"<h2>Welcome, <span style='color:#0078ff;'>{st.session_state.username}!</span></h2>",
+                unsafe_allow_html=True)
+    st.markdown("<h3 style='font-size:35px; margin-top:15px;'>Upload Annual Report (PDF)</h3>", unsafe_allow_html=True)
 
-    # Main app content
-    st.title("📊 Annual Report RAG Assistant")
-    st.write(f"Welcome, {st.session_state.username}!")
-
-    uploaded = st.file_uploader("Upload an Annual Report PDF", type="pdf")
+    uploaded = st.file_uploader("", type="pdf",
+                                on_change=lambda: st.session_state.update({"pdf_uploaded": uploaded is not None}))
 
     if uploaded:
         st.success("✅ PDF Uploaded!")
+        st.session_state.pdf_uploaded = True
 
-        question = st.text_input("Ask a question about the report:")
+    for role, message in st.session_state.chat_history:
+        if role == "user":
+            st.markdown(
+                f'<div class="user-message">{message}</div>',
+                unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f'<div class="assistant-message">{message}</div>',
+                unsafe_allow_html=True)
 
-        if question:
-            st.write("You asked:", question)
-            st.write("Pretend I'm answering right now (AI coming next!)")
+    # Wider chat input with 6:1 ratio instead of 5:1
+    col1, col2 = st.columns([6, 1])
+    with col1:
+        st.text_input("Ask a question about the report...", key="user_question", on_change=handle_chat_submit)
+    with col2:
+        st.button("Send", on_click=handle_chat_submit)
