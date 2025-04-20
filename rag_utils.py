@@ -11,7 +11,6 @@ def process_query(text, query):
     import os
 
     # Hardcoded API key (Note: this is not a best practice but required as specified)
-    api_key = "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"
     os.environ['OPENAI_API_KEY'] = api_key
 
     try:
